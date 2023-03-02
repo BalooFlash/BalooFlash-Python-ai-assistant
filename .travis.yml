@@ -1,33 +1,55 @@
-dist: xenial
-sudo: required
 language: python
-python:
-  - '3.7.6'
-install:
-  - pip install -r requirements.txt
-  - pip install pytest
-  - pip install pytest-cov
-script:
-  - python setup.py install
-  - cd test
-  - mkdir data-models
-  - mkdir data-temp
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/DenseNet-BC-121-32.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/inception_v3_weights_tf_dim_ordering_tf_kernels.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essentials-v5/resnet50_imagenet_tf.2.0.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essentials-v5/mobilenet_v2.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/models-v3/idenprof_densenet-0.763500.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/models-v3/idenprof_full_resnet_ex-001_acc-0.119792.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essentials-v5/idenprof_resnet_ex-056_acc-0.993062.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essentials-v5/resnet50_coco_best_v2.1.0.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo-tiny.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essential-v4/pretrained-yolov3.h5
-  - wget -P data-models/ https://github.com/OlafenwaMoses/ImageAI/releases/download/essential-v4/hololens-ex-60--loss-2.76.h5
-  - pytest -v --cov
-after_script:
-  - bash <(curl -s https://codecov.io/bash)
+cache: pip
 
+os: linux
+dist: focal
+python: 3.8
 
+jobs:
+  include:
 
+    - stage: test
+      before_install:
+        - sudo bash bin/deploy/install_system_dependencies.sh
+      install:
+        - bash bin/deploy/install_python_dependencies.sh
+      script:
+        # Run tests by using Travis virtual env (quick way, pip deps are cached)
+        - sudo bash bin/tests/run_tests_on_travis.sh
 
+    - stage: merge (develop --> master)
+      install:
+        - sudo bash setup.sh
+      script:
+        # Run tests with the same way as locally
+        # With this way setup script (setup.sh) is validated
+        - sudo bash run_tests.sh
+      after_success:
+        - sudo bash bin/deploy/merge_develop_to_master.sh
+
+    - stage: deploy
+      install: skip
+      script: skip
+      env:
+        - RELEASE_PACKAGE=jarvis_package.tar
+      before_deploy:
+        - bash bin/deploy/new_release_auto_tagging.sh
+        - bash bin/deploy/create_release_package.sh
+      deploy:
+        provider: releases
+        skip_cleanup: true
+        api_key: $GITHUB_TOKEN
+        file: $RELEASE_PACKAGE
+        on:
+          branch: master
+
+stages:
+  - name: test
+    if: NOT (branch IN (develop,master)) AND (NOT(branch==^Release.*))
+  - name: merge (develop --> master)
+    if: branch==develop AND NOT(type==pull_request)
+  - name: deploy
+    if: branch==master
+
+notifications:
+  email: false
